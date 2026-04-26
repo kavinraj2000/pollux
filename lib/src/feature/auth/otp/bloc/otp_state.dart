@@ -1,0 +1,27 @@
+// otp_state.dart
+part of 'otp_bloc.dart';
+
+enum OtpStatus { initial, loading, resending, success, failure }
+
+class OtpState extends Equatable {
+  final OtpStatus status;
+  final String message;
+
+  const OtpState({
+    this.status = OtpStatus.initial,
+    this.message = '',
+  });
+
+  OtpState copyWith({
+    OtpStatus? status,
+    String? message,
+  }) {
+    return OtpState(
+      status: status ?? this.status,
+      message: message ?? this.message,
+    );
+  }
+
+  @override
+  List<Object?> get props => [status, message];
+}
