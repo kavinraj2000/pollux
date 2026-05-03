@@ -10,9 +10,9 @@ abstract class OtpEvent extends Equatable {
 
 class OtpSubmitted extends OtpEvent {
   final String otp;
-  final String phone;
+  final String phone ;
 
-  const OtpSubmitted({required this.otp, required this.phone});
+  const OtpSubmitted({required this.otp,required this.phone});
 
   @override
   List<Object?> get props => [otp, phone];

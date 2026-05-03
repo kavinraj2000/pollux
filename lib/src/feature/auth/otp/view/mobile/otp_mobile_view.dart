@@ -3,13 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_form_builder/flutter_form_builder.dart';
+import 'package:form_builder_validators/form_builder_validators.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pollux/src/feature/auth/otp/bloc/otp_bloc.dart';
 
-class OtpMobileViewPage extends StatefulWidget {
-  /// Phone number passed from the login page
-  final String phone;
+const _primary = Color(0xFFFF921C);
+const _secondary = Color(0xFF015B5C);
 
+class OtpMobileViewPage extends StatefulWidget {
+  final String phone;
   const OtpMobileViewPage({super.key, required this.phone});
 
   @override
@@ -17,344 +20,284 @@ class OtpMobileViewPage extends StatefulWidget {
 }
 
 class _OtpMobileViewPageState extends State<OtpMobileViewPage> {
+  final _formKey = GlobalKey<FormBuilderState>();
+
   static const int _otpLength = 4;
-  static const int _resendCooldown = 30; // seconds
 
-  final List<TextEditingController> _controllers =
-      List.generate(_otpLength, (_) => TextEditingController());
-  final List<FocusNode> _focusNodes =
-      List.generate(_otpLength, (_) => FocusNode());
+  bool _isSubmitting = false;
 
-  int _secondsRemaining = _resendCooldown;
+  int _seconds = 30;
   Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _startTimer();
-    // Auto-focus first box
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focusNodes[0].requestFocus();
-    });
   }
 
   void _startTimer() {
+    _seconds = 30;
     _timer?.cancel();
-    setState(() => _secondsRemaining = _resendCooldown);
+
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_secondsRemaining == 0) {
+      if (_seconds == 0) {
         timer.cancel();
       } else {
-        setState(() => _secondsRemaining--);
+        setState(() => _seconds--);
       }
     });
   }
 
-  String get _currentOtp =>
-      _controllers.map((c) => c.text).join();
+  String _getCurrentOtp() {
+    final state = _formKey.currentState;
+    if (state == null) return '';
 
-  void _onChanged(String value, int index) {
-    if (value.length == 1 && index < _otpLength - 1) {
-      _focusNodes[index + 1].requestFocus();
-    }
-    // Auto-submit when all boxes filled
-    if (_currentOtp.length == _otpLength) {
-      _submitOtp();
-    }
+    return List.generate(
+      _otpLength,
+      (i) => (state.fields['otp_$i']?.value as String?) ?? '',
+    ).join();
   }
 
-  void _onKeyEvent(KeyEvent event, int index) {
-    if (event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.backspace &&
-        _controllers[index].text.isEmpty &&
-        index > 0) {
-      _focusNodes[index - 1].requestFocus();
-      _controllers[index - 1].clear();
-    }
-  }
+  void _submitOtp(String otp) {
+    if (_isSubmitting) return;
 
-  void _submitOtp() {
-    if (_currentOtp.length < _otpLength) return;
-    FocusScope.of(context).unfocus();
+    _isSubmitting = true;
+
     context.read<OtpBloc>().add(
-          OtpSubmitted(otp: _currentOtp, phone: widget.phone),
-        );
+      OtpSubmitted(
+        otp: otp,
+        phone: widget.phone,
+      ),
+    );
   }
 
-  void _resendOtp() {
-    if (_secondsRemaining > 0) return;
-    for (final c in _controllers) {
-      c.clear();
+  void _handleAutoSubmit() {
+    final otp = _getCurrentOtp();
+
+    if (otp.length == _otpLength && !_isSubmitting) {
+      FocusScope.of(context).unfocus();
+      _formKey.currentState?.save();
+      _submitOtp(otp);
     }
-    _focusNodes[0].requestFocus();
-    _startTimer();
-    context.read<OtpBloc>().add(OtpResendRequested(phone: widget.phone));
+  }
+
+  void _handlePaste(String value) {
+    if (value.length > 1) {
+      final chars = value.split('');
+
+      for (int i = 0; i < chars.length && i < _otpLength; i++) {
+        _formKey.currentState?.fields['otp_$i']?.didChange(chars[i]);
+      }
+
+      _handleAutoSubmit();
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    for (final c in _controllers) {
-      c.dispose();
-    }
-    for (final f in _focusNodes) {
-      f.dispose();
-    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => OtpBloc(),
-      child: Scaffold(
-        body: BlocListener<OtpBloc, OtpState>(
-          listener: (context, state) {
-            if (state.status == OtpStatus.success) {
-              context.go('/home');
-            }
-          },
-          child: BlocBuilder<OtpBloc, OtpState>(
-            builder: (context, state) {
-              final isLoading = state.status == OtpStatus.loading;
-              final isResending = state.status == OtpStatus.resending;
+    return Scaffold(
+      body: BlocListener<OtpBloc, OtpState>(
+        listener: (context, state) {
+          if (state.status != OtpStatus.loading) {
+            _isSubmitting = false;
+          }
 
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Background
-                  Image.asset(
-                    'assets/image/download.jpg',
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFF0D0D1A), Color(0xFF1A1A3E)],
-                        ),
-                      ),
-                    ),
-                  ),
+          if (state.status == OtpStatus.success) {
+            context.go('/home');
+          }
 
-                  // Dark overlay
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withOpacity(0.3),
-                          Colors.black.withOpacity(0.88),
-                        ],
-                      ),
-                    ),
-                  ),
+          if (state.status == OtpStatus.failure) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.message)),
+            );
+          }
 
-                  SafeArea(
-                    child: Column(
-                      children: [
-                        // Back button
-                        Align(
-                          alignment: Alignment.topLeft,
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back_ios_new,
-                              color: Colors.white,
-                            ),
-                            onPressed: () => context.pop(),
-                          ),
-                        ),
+          if (state.status == OtpStatus.resending) {
+            _startTimer();
+          }
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(color: _secondary),
 
-                        const Spacer(),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.08),
+                    Colors.black.withOpacity(0.45),
+                  ],
+                ),
+              ),
+            ),
 
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Container(
-                            padding: const EdgeInsets.all(28),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(28),
-                              border: Border.all(color: Colors.white24),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.4),
-                                  blurRadius: 40,
-                                  offset: const Offset(0, 20),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Header
-                                const Text(
-                                  'Verify OTP',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                RichText(
-                                  text: TextSpan(
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.55),
-                                      fontSize: 14,
-                                    ),
-                                    children: [
-                                      const TextSpan(
-                                          text: 'Code sent to '),
-                                      TextSpan(
-                                        text: widget.phone,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+            BlocBuilder<OtpBloc, OtpState>(
+              builder: (context, state) {
+                final isLoading = state.status == OtpStatus.loading;
+                final isResending = state.status == OtpStatus.resending;
+                final isError = state.status == OtpStatus.failure;
 
-                                const SizedBox(height: 32),
-
-                                // OTP Pin Boxes
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: List.generate(
-                                    _otpLength,
-                                    (index) => _OtpBox(
-                                      controller: _controllers[index],
-                                      focusNode: _focusNodes[index],
-                                      isError:
-                                          state.status == OtpStatus.failure,
-                                      onChanged: (v) =>
-                                          _onChanged(v, index),
-                                      onKeyEvent: (e) =>
-                                          _onKeyEvent(e, index),
-                                    ),
-                                  ),
-                                ),
-
-                                // Error message
-                                if (state.status == OtpStatus.failure)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 12),
-                                    child: Text(
-                                      state.message,
-                                      style: const TextStyle(
-                                        color: Colors.redAccent,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-
-                                // Resend toast
-                                if (state.status == OtpStatus.initial &&
-                                    state.message.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 12),
-                                    child: Text(
-                                      state.message,
-                                      style: const TextStyle(
-                                        color: Colors.greenAccent,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-
-                                const SizedBox(height: 28),
-
-                                // Verify button
-                                SizedBox(
-                                  width: double.infinity,
-                                  height: 52,
-                                  child: ElevatedButton(
-                                    onPressed: isLoading ? null : _submitOtp,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      foregroundColor:
-                                          const Color(0xFF1A1A2E),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(14),
-                                      ),
-                                      elevation: 0,
-                                    ),
-                                    child: isLoading
-                                        ? const SizedBox(
-                                            width: 22,
-                                            height: 22,
-                                            child: CircularProgressIndicator(
-                                              color: Colors.black,
-                                              strokeWidth: 2.5,
-                                            ),
-                                          )
-                                        : const Text(
-                                            'Verify',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                  ),
-                                ),
-
-                                const SizedBox(height: 16),
-
-                                // Resend row
-                                Center(
-                                  child: isResending
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            color: Colors.white54,
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : GestureDetector(
-                                          onTap: _resendOtp,
-                                          child: RichText(
-                                            text: TextSpan(
-                                              style: TextStyle(
-                                                color: Colors.white
-                                                    .withOpacity(0.55),
-                                                fontSize: 13,
-                                              ),
-                                              children: [
-                                                const TextSpan(
-                                                    text: "Didn't receive it? "),
-                                                TextSpan(
-                                                  text: _secondsRemaining > 0
-                                                      ? 'Resend in ${_secondsRemaining}s'
-                                                      : 'Resend OTP',
-                                                  style: TextStyle(
-                                                    color: _secondsRemaining > 0
-                                                        ? Colors.white38
-                                                        : Colors.white,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                ),
-                              ],
+                return SafeArea(
+                  child: Stack(
+                    children: [
+                      Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(vertical: 80),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: _buildCard(
+                              context,
+                              isLoading,
+                              isResending,
+                              isError,
+                              state,
                             ),
                           ),
                         ),
+                      ),
 
-                        const SizedBox(height: 48),
-                      ],
-                    ),
+                      Align(
+                        alignment: Alignment.topLeft,
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.arrow_back_ios_new,
+                            color: Colors.white,
+                          ),
+                          onPressed: () => context.pop(),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              );
-            },
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard(
+    BuildContext context,
+    bool isLoading,
+    bool isResending,
+    bool isError,
+    OtpState state,
+  ) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.13),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.30),
+            width: 1.2,
+          ),
+        ),
+        child: FormBuilder(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Verify OTP',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+
+              const SizedBox(height: 32),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List.generate(
+                  _otpLength,
+                  (index) => _OtpBox(
+                    name: 'otp_$index',
+                    isError: isError,
+                    onChanged: (val) {
+                      _handlePaste(val ?? '');
+
+                      if ((val?.length ?? 0) == 1 &&
+                          index < _otpLength - 1) {
+                        FocusScope.of(context).nextFocus();
+                      }
+
+                      if ((val?.isEmpty ?? true)) {
+                        FocusScope.of(context).previousFocus();
+                      }
+
+                      _handleAutoSubmit();
+                    },
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 28),
+
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: isLoading
+                      ? null
+                      : () {
+                          final otp = _getCurrentOtp();
+                          if (otp.length == _otpLength) {
+                            _submitOtp(otp);
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primary,
+                  ),
+                  child: isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text('Verify'),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              Center(
+                child: isResending
+                    ? const CircularProgressIndicator()
+                    : GestureDetector(
+                        onTap: _seconds == 0
+                            ? () {
+                                _formKey.currentState?.reset();
+                                context.read<OtpBloc>().add(
+                                      OtpResendRequested(
+                                        phone: widget.phone,
+                                      ),
+                                    );
+                              }
+                            : null,
+                        child: Text(
+                          _seconds == 0
+                              ? "Resend OTP"
+                              : "Resend in $_seconds s",
+                          style: TextStyle(
+                            color: _seconds == 0
+                                ? Colors.white
+                                : Colors.white54,
+                          ),
+                        ),
+                      ),
+              ),
+            ],
           ),
         ),
       ),
@@ -362,73 +305,35 @@ class _OtpMobileViewPageState extends State<OtpMobileViewPage> {
   }
 }
 
-// ─────────────────────────────────────────────
-// Single OTP digit box
-// ─────────────────────────────────────────────
-
 class _OtpBox extends StatelessWidget {
-  final TextEditingController controller;
-  final FocusNode focusNode;
+  final String name;
   final bool isError;
-  final ValueChanged<String> onChanged;
-  final ValueChanged<KeyEvent> onKeyEvent;
+  final ValueChanged<String?> onChanged;
 
   const _OtpBox({
-    required this.controller,
-    required this.focusNode,
+    required this.name,
     required this.isError,
     required this.onChanged,
-    required this.onKeyEvent,
   });
 
   @override
   Widget build(BuildContext context) {
-    return KeyboardListener(
-      focusNode: FocusNode(),
-      onKeyEvent: onKeyEvent,
-      child: SizedBox(
-        width: 62,
-        height: 62,
-        child: TextField(
-          controller: controller,
-          focusNode: focusNode,
-          maxLength: 1,
-          keyboardType: TextInputType.number,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-          ),
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          onChanged: onChanged,
-          decoration: InputDecoration(
-            counterText: '',
-            filled: true,
-            fillColor: Colors.white.withOpacity(0.12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: isError
-                    ? Colors.redAccent
-                    : Colors.white.withOpacity(0.2),
-              ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: isError
-                    ? Colors.redAccent
-                    : Colors.white.withOpacity(0.2),
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: isError ? Colors.redAccent : Colors.white,
-                width: 1.5,
-              ),
-            ),
+    return SizedBox(
+      width: 44,
+      child: FormBuilderTextField(
+        name: name,
+        maxLength: 1,
+        keyboardType: TextInputType.number,
+        textAlign: TextAlign.center,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        onChanged: onChanged,
+        validator: FormBuilderValidators.required(errorText: ''),
+        decoration: InputDecoration(
+          counterText: '',
+          filled: true,
+          fillColor: Colors.white.withOpacity(0.12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
           ),
         ),
       ),

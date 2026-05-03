@@ -10,6 +10,7 @@ class LoginRepo {
   Future<void> sendotp({required String phone}) async {
     try {
       final url = ApiRepository.baseapi + Constants.API.SEND_OTP;
+      log.d('LoginRepo:sendotp::$url');
       await dio.post(
         url,
         data: {
@@ -17,8 +18,12 @@ class LoginRepo {
           "data": {"phone": phone},
         },
       );
+    } on DioException catch (e) {
+      log.e('LoginRepo:sendotp::DioError ${e.message}');
+      throw Exception(e.response?.data?['message'] ?? 'Send OTP failed');
     } catch (e) {
-      throw Exception('send otp failed');
+      log.e('LoginRepo:sendotp::error $e');
+      throw Exception('Send OTP failed');
     }
   }
 }
