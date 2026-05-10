@@ -21,17 +21,19 @@ class OtpRepo {
         "data": {"phone": phone, "otp": otp},
       };
 
+      log.d('verifyOtp:url=$url::::data=$data :::');
       final response = await dio.post(
         url,
         data: data,
         options: Options(
           headers: {
             'Content-Type': 'application/json',
+            'x-device-type': 'web',
             'Accept': 'application/json',
           },
         ),
       );
-
+      log.d('verifyOtp:::${response.data}:::::::$phone');
       final result = response.data;
 
       if (result['token'] != null) {

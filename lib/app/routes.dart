@@ -3,6 +3,7 @@ import 'package:pollux/app/route_name.dart';
 import 'package:pollux/src/core/base/view/base_view.dart';
 import 'package:pollux/src/feature/auth/login/view/login_view.dart';
 import 'package:pollux/src/feature/auth/otp/view/otp_view.dart';
+import 'package:pollux/src/presentation/screen/home/view/home_page.dart';
 
 class Routes {
   late final GoRouter router = GoRouter(
@@ -22,6 +23,11 @@ class Routes {
         path: RouteName.otp,
         name: RouteName.otp,
         builder: (context, state) => const OtpView(),
+      ),
+      GoRoute(
+        path: RouteName.home,
+        name: RouteName.home,
+        builder: (context, state) => const HomePage(),
       ),
     ],
   );

@@ -2,6 +2,6 @@
 
 class ApiConstants {
   final String SEND_OTP = '/sendotp';
-  final String VERIFY_OTP = '/verifyotp';
+  final String VERIFY_OTP = 'verifyotp';
   final String ACCESS_TOKEN = '/accesstoken';
 }

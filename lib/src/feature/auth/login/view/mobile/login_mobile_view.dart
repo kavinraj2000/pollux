@@ -200,6 +200,20 @@ class _LoginMobileviewPageState extends State<LoginMobileviewPage> {
                                     ),
                                   ),
                                   const SizedBox(height: 12),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      TextButton(
+                                        onPressed: () {
+                                          context.goNamed(RouteName.home);
+                                        },
+                                        child: Text(
+                                          'Guest mode',
+                                          style: TextStyle(color: Colors.white),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ],
                               ),
                             ),
